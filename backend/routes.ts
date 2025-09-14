@@ -29,6 +29,18 @@ router.delete("/niveis/:id", async (req: Request, res: Response) => {
   try {
     const db = await dbPromise;
     const { id } = req.params;
+    // Check if any developer is associated with this nivel
+
+    const associatedDev = await db.get(
+      "SELECT 1 FROM desenvolvedor WHERE nivel_id = ?",
+      id
+    );
+    if (associatedDev) {
+      return res
+        .status(401)
+        .json({ error: "Este nível tem desenvolvedores associados" });
+    }
+
     await db.run("DELETE FROM nivel WHERE id = ?", id);
     res.status(200).json({ message: "Nivel deleted successfully" });
   } catch (error) {
@@ -38,7 +50,13 @@ router.delete("/niveis/:id", async (req: Request, res: Response) => {
 router.get("/niveis", async (req: Request, res: Response) => {
   try {
     const db = await dbPromise;
-    const niveis = await db.all("SELECT * FROM nivel");
+    const niveis = await db.all(
+      `SELECT n.*, COUNT(d.id) AS developerCount
+       FROM nivel n
+         LEFT JOIN desenvolvedor d ON n.id = d.nivel_id
+         GROUP BY n.id`
+    );
+
     res.status(200).json(niveis);
   } catch (error) {
     res.status(404).json({ error: "Failed to fetch niveis" });
@@ -63,10 +81,12 @@ router.post("/desenvolvedores", async (req: Request, res: Response) => {
     const idade =
       new Date().getFullYear() - new Date(data_nascimento).getFullYear();
 
+    console.log(nome, sexo, data_nascimento, idade, hobby, nivel_id);
     const result = await db.run(
-      "INSERT INTO desenvolvedor (nome, sexo, data_nascimento, hobby, nivel_id) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO desenvolvedor (nome, sexo, data_nascimento, idade, hobby, nivel_id) VALUES (?, ?, ?, ?, ?, ?)",
       [nome, sexo, data_nascimento, idade, hobby, nivel_id]
     );
+
     res.status(201).json({
       id: result.lastID,
       nome,

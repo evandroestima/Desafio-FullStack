@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Typography,
   Button,
@@ -15,15 +15,56 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  TableSortLabel,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
-
+import { API_URL } from "../api";
 // You may need to define API_URL and Nivel type if not already defined elsewhere
 // Example:
-const API_URL = "http://localhost:3000";
-type Nivel = { id: number; nivel: string };
+type Nivel = { id: number; nivel: string; developerCount?: number };
+
+// Helper function to create a comparator for sorting
+function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
+  if (b[orderBy] < a[orderBy]) {
+    return -1;
+  }
+  if (b[orderBy] > a[orderBy]) {
+    return 1;
+  }
+  return 0;
+}
+
+// Helper function to get the correct comparator based on the sort order
+type Order = "asc" | "desc";
+function getComparator<Key extends keyof any>(
+  order: Order,
+  orderBy: Key
+): (
+  a: { [key in Key]: number | string },
+  b: { [key in Key]: number | string }
+) => number {
+  return order === "desc"
+    ? (a, b) => descendingComparator(a, b, orderBy)
+    : (a, b) => -descendingComparator(a, b, orderBy);
+}
+
+// A more stable sorting function
+function stableSort<T>(
+  array: readonly T[],
+  comparator: (a: T, b: T) => number
+) {
+  const stabilizedThis = array.map((el, index) => [el, index] as [T, number]);
+  stabilizedThis.sort((a, b) => {
+    const order = comparator(a[0], b[0]);
+    if (order !== 0) {
+      return order;
+    }
+    return a[1] - b[1];
+  });
+  return stabilizedThis.map((el) => el[0]);
+}
 
 const NiveisPage = () => {
   const [niveis, setNiveis] = useState<Nivel[]>([]);
@@ -32,17 +73,33 @@ const NiveisPage = () => {
   const [currentLevel, setCurrentLevel] = useState<Nivel | null>(null);
   const [nivelInput, setNivelInput] = useState("");
 
+  // New state for sorting
+  const [order, setOrder] = useState<Order>("asc");
+  const [orderBy, setOrderBy] = useState<keyof Nivel>("nivel");
+
   // Fetch data from the backend
   const fetchNiveis = async () => {
     try {
       const response = await fetch(`${API_URL}/niveis`);
       const data = await response.json();
-      console.log(data);
+      console.log("Níveis fetched:", data);
       setNiveis(data);
     } catch (error) {
       console.error("Erro ao buscar níveis:", error);
     }
   };
+
+  // Handler for sorting requests
+  const handleRequestSort = (property: keyof Nivel) => {
+    const isAsc = orderBy === property && order === "asc";
+    setOrder(isAsc ? "desc" : "asc");
+    setOrderBy(property);
+  };
+
+  // A memoized sorted list to prevent unnecessary re-renders
+  const sortedNiveis = useMemo(() => {
+    return stableSort(niveis, getComparator(order, orderBy));
+  }, [niveis, order, orderBy]);
 
   // Run on component mount
   useEffect(() => {
@@ -70,6 +127,7 @@ const NiveisPage = () => {
   const handleCloseConfirm = () => {
     setOpenConfirm(false);
     setCurrentLevel(null);
+    alert("Nível excluído com sucesso!");
   };
 
   // CRUD operations
@@ -93,6 +151,7 @@ const NiveisPage = () => {
       }
       fetchNiveis(); // Refresh the list
       handleCloseModal();
+      alert("Nível salvo com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar nível:", error);
     }
@@ -101,9 +160,21 @@ const NiveisPage = () => {
   const handleDelete = async () => {
     if (!currentLevel) return;
     try {
-      await fetch(`${API_URL}/niveis/${currentLevel.id}`, {
+      const response = await fetch(`${API_URL}/niveis/${currentLevel.id}`, {
         method: "DELETE",
       });
+      if (response.status === 401) {
+        alert(
+          "Este nível tem desenvolvedores associados e não pode ser deletado."
+        );
+
+        console.error(
+          "Este nível tem desenvolvedores associados e não pode ser deletado."
+        );
+        handleCloseConfirm();
+        return;
+      }
+
       fetchNiveis();
       handleCloseConfirm();
     } catch (error) {
@@ -134,33 +205,75 @@ const NiveisPage = () => {
         <Table>
           <TableHead>
             <TableRow className="bg-gray-200">
-              <TableCell>ID</TableCell>
-              <TableCell>Nível</TableCell>
+              <TableCell sortDirection={orderBy === "id" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "id"}
+                  direction={orderBy === "id" ? order : "asc"}
+                  onClick={() => handleRequestSort("id")}
+                >
+                  ID
+                </TableSortLabel>
+              </TableCell>
+              <TableCell sortDirection={orderBy === "nivel" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "nivel"}
+                  direction={orderBy === "nivel" ? order : "asc"}
+                  onClick={() => handleRequestSort("nivel")}
+                >
+                  Nível
+                </TableSortLabel>
+              </TableCell>
+              <TableCell>
+                <TableSortLabel
+                  active={orderBy === "developerCount"}
+                  direction={orderBy === "developerCount" ? order : "asc"}
+                  onClick={() => handleRequestSort("developerCount")}
+                >
+                  Qtd de Desenvolvedores associados
+                </TableSortLabel>
+              </TableCell>
               <TableCell align="right">Ações</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {niveis.length > 0 ? (
-              niveis.map((nivel) => (
-                <TableRow key={nivel.id}>
-                  <TableCell>{nivel.id}</TableCell>
-                  <TableCell>{nivel.nivel}</TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      onClick={() => handleOpenModal(nivel)}
-                      color="primary"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      onClick={() => handleOpenConfirm(nivel)}
-                      color="secondary"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
+            {sortedNiveis.length > 0 ? (
+              sortedNiveis.map((nivel) => {
+                const nivelObj: Nivel = {
+                  id:
+                    typeof nivel.id === "string"
+                      ? parseInt(nivel.id, 10)
+                      : nivel.id,
+                  nivel:
+                    typeof nivel.nivel === "number"
+                      ? String(nivel.nivel)
+                      : nivel.nivel,
+                  developerCount:
+                    typeof nivel.developerCount === "string"
+                      ? parseInt(nivel.developerCount, 10)
+                      : nivel.developerCount,
+                };
+                return (
+                  <TableRow key={nivelObj.id}>
+                    <TableCell>{nivelObj.id}</TableCell>
+                    <TableCell>{nivelObj.nivel}</TableCell>
+                    <TableCell>{nivelObj.developerCount ?? 0}</TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        onClick={() => handleOpenModal(nivelObj)}
+                        color="primary"
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        onClick={() => handleOpenConfirm(nivelObj)}
+                        color="secondary"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell colSpan={3} align="center">

@@ -17,7 +17,8 @@ export const initializeDatabase = async () => {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS nivel (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nivel TEXT NOT NULL
+      nivel TEXT NOT NULL,
+      number_of_developers INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS desenvolvedor (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

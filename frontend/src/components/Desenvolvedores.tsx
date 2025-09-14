@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Typography,
   Button,
@@ -18,12 +19,13 @@ import {
   Select,
   MenuItem,
   DialogActions,
+  TableSortLabel,
 } from "@mui/material";
-import { useState, useEffect } from "react";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
-
+import { API_URL } from "../api";
+// Define the types and API URL
 type Desenvolvedor = {
   id: number;
   nome: string;
@@ -36,7 +38,44 @@ type Desenvolvedor = {
 
 type Nivel = { id: number; nivel: string };
 
-const API_URL = "http://localhost:3000";
+// Helper functions for stable sorting
+type Order = "asc" | "desc";
+function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
+  if (b[orderBy] < a[orderBy]) {
+    return -1;
+  }
+  if (b[orderBy] > a[orderBy]) {
+    return 1;
+  }
+  return 0;
+}
+
+function getComparator<Key extends keyof any>(
+  order: Order,
+  orderBy: Key
+): (
+  a: { [key in Key]: number | string },
+  b: { [key in Key]: number | string }
+) => number {
+  return order === "desc"
+    ? (a, b) => descendingComparator(a, b, orderBy)
+    : (a, b) => -descendingComparator(a, b, orderBy);
+}
+
+function stableSort<T>(
+  array: readonly T[],
+  comparator: (a: T, b: T) => number
+) {
+  const stabilizedThis = array.map((el, index) => [el, index] as [T, number]);
+  stabilizedThis.sort((a, b) => {
+    const order = comparator(a[0], b[0]);
+    if (order !== 0) {
+      return order;
+    }
+    return a[1] - b[1];
+  });
+  return stabilizedThis.map((el) => el[0]);
+}
 
 const DesenvolvedoresPage = () => {
   const [desenvolvedores, setDesenvolvedores] = useState<Desenvolvedor[]>([]);
@@ -51,6 +90,10 @@ const DesenvolvedoresPage = () => {
     hobby: "",
     nivel_id: "",
   });
+
+  // State for sorting
+  const [order, setOrder] = useState<Order>("asc");
+  const [orderBy, setOrderBy] = useState<keyof Desenvolvedor>("nome");
 
   const fetchDesenvolvedores = async () => {
     try {
@@ -76,6 +119,33 @@ const DesenvolvedoresPage = () => {
     fetchDesenvolvedores();
     fetchNiveis();
   }, []);
+
+  // Handle sort request
+  const handleRequestSort = (property: keyof Desenvolvedor) => {
+    const isAsc = orderBy === property && order === "asc";
+    setOrder(isAsc ? "desc" : "asc");
+    setOrderBy(property);
+  };
+
+  // Create a combined list of developers with their level names for sorting
+  const desenvolvedoresWithNivel = useMemo(() => {
+    return desenvolvedores.map((dev) => ({
+      ...dev,
+      nivel_nome: niveis.find((n) => n.id === dev.nivel_id)?.nivel || "N/A",
+    }));
+  }, [desenvolvedores, niveis]);
+
+  // Sort the developers
+  const sortedDesenvolvedores = useMemo(() => {
+    // A temporary array is needed to perform the sorting based on the nivel_nome
+    if (orderBy === "nivel_id") {
+      return stableSort(
+        desenvolvedoresWithNivel,
+        getComparator(order, "nivel_nome")
+      );
+    }
+    return stableSort(desenvolvedoresWithNivel, getComparator(order, orderBy));
+  }, [desenvolvedoresWithNivel, order, orderBy]);
 
   // Handlers for modal actions
   const handleOpenModal = (dev: Desenvolvedor | null = null) => {
@@ -146,6 +216,7 @@ const DesenvolvedoresPage = () => {
       }
       fetchDesenvolvedores();
       handleCloseModal();
+      alert("Desenvolvedor salvo com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar desenvolvedor:", error);
     }
@@ -159,6 +230,7 @@ const DesenvolvedoresPage = () => {
       });
       fetchDesenvolvedores();
       handleCloseConfirm();
+      alert("Desenvolvedor excluído com sucesso!");
     } catch (error) {
       console.error("Erro ao deletar desenvolvedor:", error);
     }
@@ -187,19 +259,77 @@ const DesenvolvedoresPage = () => {
         <Table>
           <TableHead>
             <TableRow className="bg-gray-200">
-              <TableCell>ID</TableCell>
-              <TableCell>Nome</TableCell>
-              <TableCell>Sexo</TableCell>
-              <TableCell>Data Nascimento</TableCell>
-              <TableCell>Idade</TableCell>
-              <TableCell>Hobby</TableCell>
-              <TableCell>Nível</TableCell>
+              <TableCell sortDirection={orderBy === "id" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "id"}
+                  direction={orderBy === "id" ? order : "asc"}
+                  onClick={() => handleRequestSort("id")}
+                >
+                  ID
+                </TableSortLabel>
+              </TableCell>
+              <TableCell sortDirection={orderBy === "nome" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "nome"}
+                  direction={orderBy === "nome" ? order : "asc"}
+                  onClick={() => handleRequestSort("nome")}
+                >
+                  Nome
+                </TableSortLabel>
+              </TableCell>
+              <TableCell sortDirection={orderBy === "sexo" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "sexo"}
+                  direction={orderBy === "sexo" ? order : "asc"}
+                  onClick={() => handleRequestSort("sexo")}
+                >
+                  Sexo
+                </TableSortLabel>
+              </TableCell>
+              <TableCell
+                sortDirection={orderBy === "data_nascimento" ? order : false}
+              >
+                <TableSortLabel
+                  active={orderBy === "data_nascimento"}
+                  direction={orderBy === "data_nascimento" ? order : "asc"}
+                  onClick={() => handleRequestSort("data_nascimento")}
+                >
+                  Data Nascimento
+                </TableSortLabel>
+              </TableCell>
+              <TableCell sortDirection={orderBy === "idade" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "idade"}
+                  direction={orderBy === "idade" ? order : "asc"}
+                  onClick={() => handleRequestSort("idade")}
+                >
+                  Idade
+                </TableSortLabel>
+              </TableCell>
+              <TableCell sortDirection={orderBy === "hobby" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "hobby"}
+                  direction={orderBy === "hobby" ? order : "asc"}
+                  onClick={() => handleRequestSort("hobby")}
+                >
+                  Hobby
+                </TableSortLabel>
+              </TableCell>
+              <TableCell sortDirection={orderBy === "nivel_id" ? order : false}>
+                <TableSortLabel
+                  active={orderBy === "nivel_id"}
+                  direction={orderBy === "nivel_id" ? order : "asc"}
+                  onClick={() => handleRequestSort("nivel_id")}
+                >
+                  Nível
+                </TableSortLabel>
+              </TableCell>
               <TableCell align="right">Ações</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {desenvolvedores.length > 0 ? (
-              desenvolvedores.map((dev) => (
+            {sortedDesenvolvedores.length > 0 ? (
+              sortedDesenvolvedores.map((dev) => (
                 <TableRow key={dev.id}>
                   <TableCell>{dev.id}</TableCell>
                   <TableCell>{dev.nome}</TableCell>
@@ -207,9 +337,7 @@ const DesenvolvedoresPage = () => {
                   <TableCell>{dev.data_nascimento}</TableCell>
                   <TableCell>{dev.idade}</TableCell>
                   <TableCell>{dev.hobby}</TableCell>
-                  <TableCell>
-                    {niveis.find((n) => n.id === dev.nivel_id)?.nivel || "N/A"}
-                  </TableCell>
+                  <TableCell>{dev.nivel_nome}</TableCell>
                   <TableCell align="right">
                     <IconButton
                       onClick={() => handleOpenModal(dev)}
