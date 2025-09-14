@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Typography,
   Button,
@@ -98,7 +98,12 @@ const NiveisPage = () => {
 
   // A memoized sorted list to prevent unnecessary re-renders
   const sortedNiveis = useMemo(() => {
-    return stableSort(niveis, getComparator(order, orderBy));
+    // Ensure developerCount is always a number (default to 0 if undefined)
+    const niveisWithDeveloperCount = niveis.map((nivel) => ({
+      ...nivel,
+      developerCount: nivel.developerCount ?? 0,
+    }));
+    return stableSort(niveisWithDeveloperCount, getComparator(order, orderBy));
   }, [niveis, order, orderBy]);
 
   // Run on component mount
