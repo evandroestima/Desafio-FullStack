@@ -6,6 +6,7 @@ Este projeto consiste em uma aplicação para cadastro de desenvolvedores associ
 Você precisa ter o Docker e o Docker componse instalados na sua máquina. 
 
 1 - Clone o repositório
+
 2 - Execute o seguinte comando para iniciar os contêineres do Docker:
   ```bash
     docker-compose up --build
