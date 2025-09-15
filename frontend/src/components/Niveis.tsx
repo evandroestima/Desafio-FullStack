@@ -16,41 +16,52 @@ import {
   DialogActions,
   TextField,
   TableSortLabel,
+  InputAdornment,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import SearchIcon from "@mui/icons-material/Search";
 import { API_URL } from "../api";
-// You may need to define API_URL and Nivel type if not already defined elsewhere
-// Example:
-type Nivel = { id: number; nivel: string; developerCount?: number };
 
-// Helper function to create a comparator for sorting
+type Nivel = { id: number; nivel: string; developerCount: number };
+
 function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
-  if (b[orderBy] < a[orderBy]) {
+  const aValue = a[orderBy];
+  const bValue = b[orderBy];
+
+  if (
+    bValue === undefined ||
+    aValue === undefined ||
+    bValue === null ||
+    aValue === null
+  ) {
+    return 0;
+  }
+
+  if (typeof bValue === "string" && typeof aValue === "string") {
+    return bValue.localeCompare(aValue);
+  }
+
+  if (bValue < aValue) {
     return -1;
   }
-  if (b[orderBy] > a[orderBy]) {
+  if (bValue > aValue) {
     return 1;
   }
   return 0;
 }
 
-// Helper function to get the correct comparator based on the sort order
 type Order = "asc" | "desc";
 function getComparator<Key extends keyof any>(
   order: Order,
   orderBy: Key
-): (
-  a: { [key in Key]: number | string },
-  b: { [key in Key]: number | string }
-) => number {
+): (a: { [key in Key]: any }, b: { [key in Key]: any }) => number {
   return order === "desc"
     ? (a, b) => descendingComparator(a, b, orderBy)
     : (a, b) => -descendingComparator(a, b, orderBy);
 }
 
-// A more stable sorting function
 function stableSort<T>(
   array: readonly T[],
   comparator: (a: T, b: T) => number
@@ -72,46 +83,42 @@ const NiveisPage = () => {
   const [openConfirm, setOpenConfirm] = useState(false);
   const [currentLevel, setCurrentLevel] = useState<Nivel | null>(null);
   const [nivelInput, setNivelInput] = useState("");
-
-  // New state for sorting
   const [order, setOrder] = useState<Order>("asc");
   const [orderBy, setOrderBy] = useState<keyof Nivel>("nivel");
+  const [filterText, setFilterText] = useState("");
+  const [message, setMessage] = useState({
+    open: false,
+    text: "",
+    type: "success",
+  });
 
-  // Fetch data from the backend
   const fetchNiveis = async () => {
     try {
       const response = await fetch(`${API_URL}/niveis`);
       const data = await response.json();
-      console.log("Níveis fetched:", data);
       setNiveis(data);
     } catch (error) {
       console.error("Erro ao buscar níveis:", error);
     }
   };
 
-  // Handler for sorting requests
   const handleRequestSort = (property: keyof Nivel) => {
     const isAsc = orderBy === property && order === "asc";
     setOrder(isAsc ? "desc" : "asc");
     setOrderBy(property);
   };
 
-  // A memoized sorted list to prevent unnecessary re-renders
-  const sortedNiveis = useMemo(() => {
-    // Ensure developerCount is always a number (default to 0 if undefined)
-    const niveisWithDeveloperCount = niveis.map((nivel) => ({
-      ...nivel,
-      developerCount: nivel.developerCount ?? 0,
-    }));
-    return stableSort(niveisWithDeveloperCount, getComparator(order, orderBy));
-  }, [niveis, order, orderBy]);
+  const filteredAndSortedNiveis = useMemo(() => {
+    const filteredList = niveis.filter((nivel) =>
+      nivel.nivel.toLowerCase().includes(filterText.toLowerCase())
+    );
+    return stableSort(filteredList, getComparator(order, orderBy));
+  }, [niveis, order, orderBy, filterText]);
 
-  // Run on component mount
   useEffect(() => {
     fetchNiveis();
   }, []);
 
-  // Handlers for modal actions
   const handleOpenModal = (nivel: Nivel | null = null) => {
     setCurrentLevel(nivel);
     setNivelInput(nivel ? nivel.nivel : "");
@@ -132,33 +139,63 @@ const NiveisPage = () => {
   const handleCloseConfirm = () => {
     setOpenConfirm(false);
     setCurrentLevel(null);
-    alert("Nível excluído com sucesso!");
   };
 
-  // CRUD operations
+  const handleCloseMessage = () => {
+    setMessage({ open: false, text: "", type: "success" });
+  };
+
   const handleAddOrEdit = async () => {
     try {
       const payload = { nivel: nivelInput };
       if (currentLevel) {
-        // Edit
-        await fetch(`${API_URL}/niveis/${currentLevel.id}`, {
+        const response = await fetch(`${API_URL}/niveis/${currentLevel.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        if (response.ok) {
+          setMessage({
+            open: true,
+            text: "Nível salvo com sucesso!",
+            type: "success",
+          });
+        } else {
+          setMessage({
+            open: true,
+            text: "Erro ao salvar nível.",
+            type: "error",
+          });
+        }
       } else {
-        // Add
-        await fetch(`${API_URL}/niveis`, {
+        const response = await fetch(`${API_URL}/niveis`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        if (response.ok) {
+          setMessage({
+            open: true,
+            text: "Nível adicionado com sucesso!",
+            type: "success",
+          });
+        } else {
+          setMessage({
+            open: true,
+            text: "Erro ao adicionar nível.",
+            type: "error",
+          });
+        }
       }
       fetchNiveis(); // Refresh the list
       handleCloseModal();
-      alert("Nível salvo com sucesso!");
     } catch (error) {
       console.error("Erro ao salvar nível:", error);
+      setMessage({
+        open: true,
+        text: "Erro ao conectar com a API.",
+        type: "error",
+      });
     }
   };
 
@@ -169,41 +206,76 @@ const NiveisPage = () => {
         method: "DELETE",
       });
       if (response.status === 401) {
-        alert(
-          "Este nível tem desenvolvedores associados e não pode ser deletado."
-        );
-
-        console.error(
-          "Este nível tem desenvolvedores associados e não pode ser deletado."
-        );
+        setMessage({
+          open: true,
+          text: "Este nível tem desenvolvedores associados e não pode ser deletado.",
+          type: "error",
+        });
         handleCloseConfirm();
         return;
       }
 
-      fetchNiveis();
+      if (response.ok) {
+        setMessage({
+          open: true,
+          text: "Nível excluído com sucesso!",
+          type: "success",
+        });
+        fetchNiveis();
+      } else {
+        setMessage({
+          open: true,
+          text: "Erro ao deletar nível.",
+          type: "error",
+        });
+      }
       handleCloseConfirm();
     } catch (error) {
       console.error("Erro ao deletar nível:", error);
+      setMessage({
+        open: true,
+        text: "Erro ao conectar com a API.",
+        type: "error",
+      });
+      handleCloseConfirm();
     }
   };
 
   return (
     <div>
       <div
-        className="flex justify-between items-center"
+        className="flex flex-col sm:flex-row justify-between items-center"
         style={styles.pageTitle}
       >
-        <Typography variant="h4" component="h1">
+        <Typography variant="h4" component="h1" className="mb-4 sm:mb-0">
           Lista de Níveis
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenModal()}
-        >
-          Adicionar Nível
-        </Button>
+        <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
+          <TextField
+            label="Buscar Nível"
+            variant="outlined"
+            size="small"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            className="w-full sm:w-auto"
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenModal()}
+            className="w-full sm:w-auto"
+          >
+            Adicionar Nível
+          </Button>
+        </div>
       </div>
 
       <TableContainer component={Paper} sx={styles.tableContainer}>
@@ -241,8 +313,8 @@ const NiveisPage = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {sortedNiveis.length > 0 ? (
-              sortedNiveis.map((nivel) => {
+            {filteredAndSortedNiveis.length > 0 ? (
+              filteredAndSortedNiveis.map((nivel) => {
                 const nivelObj: Nivel = {
                   id:
                     typeof nivel.id === "string"
@@ -253,7 +325,10 @@ const NiveisPage = () => {
                       ? String(nivel.nivel)
                       : nivel.nivel,
                   developerCount:
-                    typeof nivel.developerCount === "string"
+                    nivel.developerCount === undefined ||
+                    nivel.developerCount === null
+                      ? 0
+                      : typeof nivel.developerCount === "string"
                       ? parseInt(nivel.developerCount, 10)
                       : nivel.developerCount,
                 };
@@ -261,7 +336,7 @@ const NiveisPage = () => {
                   <TableRow key={nivelObj.id}>
                     <TableCell>{nivelObj.id}</TableCell>
                     <TableCell>{nivelObj.nivel}</TableCell>
-                    <TableCell>{nivelObj.developerCount ?? 0}</TableCell>
+                    <TableCell>{nivelObj.developerCount}</TableCell>
                     <TableCell align="right">
                       <IconButton
                         onClick={() => handleOpenModal(nivelObj)}
@@ -281,8 +356,8 @@ const NiveisPage = () => {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={3} align="center">
-                  Nenhum nível cadastrado.
+                <TableCell colSpan={4} align="center">
+                  Nenhum nível encontrado.
                 </TableCell>
               </TableRow>
             )}
@@ -290,7 +365,6 @@ const NiveisPage = () => {
         </Table>
       </TableContainer>
 
-      {/* Add/Edit Modal */}
       <Dialog open={openModal} onClose={handleCloseModal}>
         <DialogTitle>
           {currentLevel ? "Editar Nível" : "Adicionar Nível"}
@@ -316,7 +390,6 @@ const NiveisPage = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation Modal */}
       <Dialog open={openConfirm} onClose={handleCloseConfirm}>
         <DialogTitle>Confirmar Exclusão</DialogTitle>
         <DialogContent>
@@ -333,6 +406,20 @@ const NiveisPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={message.open} onClose={handleCloseMessage}>
+        <DialogTitle>
+          {message.type === "success" ? "Sucesso" : "Erro"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography>{message.text}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseMessage} color="primary">
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };
@@ -340,22 +427,11 @@ const NiveisPage = () => {
 export default NiveisPage;
 
 const styles = {
-  title: {
-    flexGrow: 1,
-  },
-
-  tableContainer: {
-    marginBottom: "2rem",
-  },
-  modal: {
-    padding: "1rem",
-    borderRadius: "8px",
-  },
-
   pageTitle: {
     marginBottom: "1rem",
   },
-  button: {
-    margin: "0 0.5rem",
+  tableContainer: {
+    marginBottom: "2rem",
+    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
   },
 };

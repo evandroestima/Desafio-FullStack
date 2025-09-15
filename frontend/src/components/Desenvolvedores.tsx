@@ -20,13 +20,15 @@ import {
   MenuItem,
   DialogActions,
   TableSortLabel,
+  InputAdornment,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import SearchIcon from "@mui/icons-material/Search";
 import { API_URL } from "../api";
-// Define the types and API URL
 type Desenvolvedor = {
+  nivel_nome: any;
   id: number;
   nome: string;
   sexo: string;
@@ -38,7 +40,6 @@ type Desenvolvedor = {
 
 type Nivel = { id: number; nivel: string };
 
-// Helper functions for stable sorting
 type Order = "asc" | "desc";
 function descendingComparator<T>(a: T, b: T, orderBy: keyof T) {
   if (b[orderBy] < a[orderBy]) {
@@ -91,9 +92,14 @@ const DesenvolvedoresPage = () => {
     nivel_id: "",
   });
 
-  // State for sorting
   const [order, setOrder] = useState<Order>("asc");
   const [orderBy, setOrderBy] = useState<keyof Desenvolvedor>("nome");
+  const [filterText, setFilterText] = useState("");
+  const [message, setMessage] = useState<{
+    open: boolean;
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
 
   const fetchDesenvolvedores = async () => {
     try {
@@ -120,34 +126,26 @@ const DesenvolvedoresPage = () => {
     fetchNiveis();
   }, []);
 
-  // Handle sort request
   const handleRequestSort = (property: keyof Desenvolvedor) => {
     const isAsc = orderBy === property && order === "asc";
     setOrder(isAsc ? "desc" : "asc");
     setOrderBy(property);
   };
 
-  // Create a combined list of developers with their level names for sorting
-  const desenvolvedoresWithNivel = useMemo(() => {
-    return desenvolvedores.map((dev) => ({
-      ...dev,
-      nivel_nome: niveis.find((n) => n.id === dev.nivel_id)?.nivel || "N/A",
-    }));
-  }, [desenvolvedores, niveis]);
+  // const desenvolvedoresWithNivel = useMemo(() => {
+  //   return desenvolvedores.map((dev) => ({
+  //     ...dev,
+  //     nivel_nome: niveis.find((n) => n.id === dev.nivel_id)?.nivel || "N/A",
+  //   }));
+  // }, [desenvolvedores, niveis]);
 
-  // Sort the developers
-  const sortedDesenvolvedores = useMemo(() => {
-    // A temporary array is needed to perform the sorting based on the nivel_nome
-    if (orderBy === "nivel_id") {
-      return stableSort(
-        desenvolvedoresWithNivel,
-        getComparator(order, "nivel_nome")
-      );
-    }
-    return stableSort(desenvolvedoresWithNivel, getComparator(order, orderBy));
-  }, [desenvolvedoresWithNivel, order, orderBy]);
+  const filteredAndSortedDesenvolvedores = useMemo(() => {
+    const filteredList = desenvolvedores.filter((dev) =>
+      dev.nome.toLowerCase().includes(filterText.toLowerCase())
+    );
+    return stableSort(filteredList, getComparator(order, orderBy));
+  }, [desenvolvedores, order, orderBy, filterText]);
 
-  // Handlers for modal actions
   const handleOpenModal = (dev: Desenvolvedor | null = null) => {
     setCurrentDev(dev);
     setForm(
@@ -200,15 +198,15 @@ const DesenvolvedoresPage = () => {
           new Date(form.data_nascimento).getFullYear(),
         ...form,
       };
-
+      let response;
       if (currentDev) {
-        await fetch(`${API_URL}/desenvolvedores/${currentDev.id}`, {
+        response = await fetch(`${API_URL}/desenvolvedores/${currentDev.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
       } else {
-        await fetch(`${API_URL}/desenvolvedores`, {
+        response = await fetch(`${API_URL}/desenvolvedores`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -216,7 +214,19 @@ const DesenvolvedoresPage = () => {
       }
       fetchDesenvolvedores();
       handleCloseModal();
-      alert("Desenvolvedor salvo com sucesso!");
+      if (response.ok) {
+        setMessage({
+          open: true,
+          text: "Desenvolvedor salvo com sucesso!",
+          type: "success",
+        });
+      } else {
+        setMessage({
+          open: true,
+          text: "Erro ao salvar desenvolvedor.",
+          type: "error",
+        });
+      }
     } catch (error) {
       console.error("Erro ao salvar desenvolvedor:", error);
     }
@@ -225,16 +235,35 @@ const DesenvolvedoresPage = () => {
   const handleDelete = async () => {
     if (!currentDev) return;
     try {
-      await fetch(`${API_URL}/desenvolvedores/${currentDev.id}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(
+        `${API_URL}/desenvolvedores/${currentDev.id}`,
+        {
+          method: "DELETE",
+        }
+      );
       fetchDesenvolvedores();
       handleCloseConfirm();
-      alert("Desenvolvedor excluído com sucesso!");
+      if (response.ok) {
+        setMessage({
+          open: true,
+          text: "Desenvolvedor deletado com sucesso!",
+          type: "success",
+        });
+      } else {
+        setMessage({
+          open: true,
+          text: "Erro ao deletar desenvolvedor.",
+          type: "error",
+        });
+      }
     } catch (error) {
       console.error("Erro ao deletar desenvolvedor:", error);
     }
   };
+
+  function handleCloseMessage() {
+    setMessage((prev) => (prev ? { ...prev, open: false } : null));
+  }
 
   return (
     <div>
@@ -245,14 +274,32 @@ const DesenvolvedoresPage = () => {
         <Typography variant="h4" component="h1">
           Lista de Desenvolvedores
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenModal()}
-        >
-          Adicionar Desenvolvedor
-        </Button>
+        <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
+          <TextField
+            label="Buscar Desenvolvedor"
+            variant="outlined"
+            size="small"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            className="w-full sm:w-auto"
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenModal()}
+            className="w-full sm:w-auto"
+          >
+            Adicionar Desenvolvedor
+          </Button>
+        </div>
       </div>
 
       <TableContainer component={Paper} sx={styles.tableContainer}>
@@ -328,8 +375,8 @@ const DesenvolvedoresPage = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {sortedDesenvolvedores.length > 0 ? (
-              sortedDesenvolvedores.map((dev) => (
+            {filteredAndSortedDesenvolvedores.length > 0 ? (
+              filteredAndSortedDesenvolvedores.map((dev) => (
                 <TableRow key={dev.id}>
                   <TableCell>{dev.id}</TableCell>
                   <TableCell>{dev.nome}</TableCell>
@@ -462,6 +509,21 @@ const DesenvolvedoresPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      {message && (
+        <Dialog open={message.open} onClose={handleCloseMessage}>
+          <DialogTitle>
+            {message.type === "success" ? "Sucesso" : "Erro"}
+          </DialogTitle>
+          <DialogContent>
+            <Typography>{message.text}</Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseMessage} color="primary">
+              OK
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </div>
   );
 };
